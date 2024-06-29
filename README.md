@@ -6,23 +6,9 @@
 
 You can install the package via Composer:
 
-1. Install via Composer:
-
     ```bash
     composer require tonygeez/lazy-column-add-to-migration
     ```
-
-2. If you are using Laravel 5.4 or lower (not tested), add the service provider to the `providers` array in `config/app.php`:
-
-    ```php
-    'providers' => [
-        // Other service providers...
-
-        TonyGeez\LazyColumnAddToMigration\LazyColumnServiceProvider::class,
-    ];
-    ```
-
-    For Laravel 5.5 and above, the package will be auto-discovered.
 
 ## Usage
 
