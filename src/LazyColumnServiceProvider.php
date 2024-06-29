@@ -1,3 +1,4 @@
+<?php
 namespace TonyGeez\LazyColumnAddToMigration;
 
 use Illuminate\Support\ServiceProvider;
