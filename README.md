@@ -1,6 +1,6 @@
 # Lazy Column Add to Migration
 
-**Lazy Column Add to Migration** is a Laravel package to easily add columns to existing migrations via Artisan commands.
+**Lazy Column Add to Migration** is a Laravel package to easily add columns to existing migrations via Artisan commands as i sadly had to make so critical change to Laravel projects tables on a iPhone and it was a real pain in the ... 🙂‍↕️
 
 ## Installation
 
