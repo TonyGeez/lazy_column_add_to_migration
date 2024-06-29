@@ -2,7 +2,6 @@
     "name": "tonygeez/lazy-column-add-to-migration",
     "description": "Laravel package to add columns to migrations via Artisan commands.",
     "type": "library",
-    "version": "v1.0.6",
     "require": {
         "php": "^8.2",
         "laravel/framework": "^11.0",
@@ -29,5 +28,8 @@
             "email": "hixostorage@gmail.com"
         }
     ],
-    "license": "MIT"
+    "license": "MIT",
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
 }
