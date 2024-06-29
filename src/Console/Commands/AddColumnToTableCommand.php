@@ -36,56 +36,69 @@ class AddColumnToTableCommand extends Command
      * @return void
      */
     public function handle()
-{
-    // Get table and column names
-    $table = $this->argument('table') ?? $this->ask('Enter the table name:');
-    $column = $this->argument('column') ?? $this->ask('Enter the column name:');
+    {
+        // Get table and column names
+        $table = $this->argument('table') ?? $this->ask('Enter the table name:');
+        $column = $this->argument('column') ?? $this->ask('Enter the column name:');
 
-    // Check if the column should be a foreign key
-    $isForeignKey = $this->confirm('Is this column a foreign key?', false);
+        // Determine if it's a foreign key based on the type option
+        $type = $this->option('type') ?? $this->choice(
+            'Choose the column type:',
+            $this->getColumnTypes(),
+            'string'
+        );
 
-    // Determine column type and definition
-    if ($isForeignKey) {
-        $columnDefinition = $this->handleForeignKey($table, $column);
-    } else {
-        $type = $this->determineColumnType(false);
-        $columnDefinition = $this->buildColumnDefinition($type, $column);
+        $isForeignKey = $type === 'foreignId';
+
+        // Handle column definition
+        if ($isForeignKey) {
+            $columnDefinition = $this->handleForeignKey($table, $column);
+        } else {
+            $columnDefinition = $this->buildColumnDefinition($type, $column);
+        }
+
+        // Check if column should be nullable
+        $nullable = $this->option('nullable') ?? $this->confirm('Should the column be nullable?', false);
+        if ($nullable) {
+            $columnDefinition .= "->nullable()";
+        }
+
+        // Handle default value
+        $default = $this->option('default') ?? $this->ask('Enter a default value (optional):');
+        if (!empty($default)) {
+            $columnDefinition .= "->default(" . $this->formatDefaultValue($type, $default) . ")";
+        }
+
+        // Determine column position
+        $after = $this->option('after') ?? $this->ask('Enter the column to place the new column after (optional):');
+        if ($after) {
+            $columnDefinition .= "->after('{$after}')";
+        }
+
+        $columnDefinition .= ";";
+
+        // Generate migration file
+        $this->generateMigrationFile($table, $column, $columnDefinition);
     }
 
-    // Check if column should be nullable
-    $nullable = $this->confirm('Should the column be nullable?', $this->option('nullable'));
-    if ($nullable) {
-        $columnDefinition .= "->nullable()";
+    /**
+     * Handle the creation of a foreign key column.
+     *
+     * @param string $table
+     * @param string $column
+     * @return string
+     */
+    private function handleForeignKey($table, $column)
+    {
+        $foreignModel = $this->option('foreign-model') ?? $this->ask("Enter the fully qualified model class for the foreign key (e.g., 'App\\Models\\Project'):");
+        $relatedTable = Str::plural(Str::snake(class_basename($foreignModel)));
+
+        $columnDefinition = "\$table->foreignIdFor({$foreignModel}::class, '{$column}')";
+        $columnDefinition .= "->constrained('{$relatedTable}')";
+
+        return $columnDefinition;
     }
 
-    // Handle default value
-    $default = $this->option('default') ?? $this->ask('Enter a default value (optional):');
-    if (!empty($default)) {
-        $columnDefinition .= "->default(" . $this->formatDefaultValue($type ?? 'string', $default) . ")";
-    }
-
-    // Determine column position
-    $after = $this->option('after') ?? $this->ask('Enter the column to place the new column after (optional):');
-    if ($after) {
-        $columnDefinition .= "->after('{$after}')";
-    }
-
-    $columnDefinition .= ";";
-
-    // Generate migration file
-    $this->generateMigrationFile($table, $column, $columnDefinition);
-}
-
-private function handleForeignKey($table, $column)
-{
-    $relatedTable = $this->ask("Enter the table this foreign key relates to (e.g., 'projects' for {$column}):");
-    $relatedModel = $this->ask("Enter the fully qualified model class for the related table (e.g., 'App\\Models\\Project'):");
-
-    $columnDefinition = "\$table->foreignIdFor({$relatedModel}::class, '{$column}')";
-    $columnDefinition .= "->constrained('{$relatedTable}')";
-
-    return $columnDefinition;
-}
     /**
      * Determine the column type.
      *
@@ -98,11 +111,7 @@ private function handleForeignKey($table, $column)
             return 'foreignId';
         }
 
-        $types = [
-            'bigInteger', 'boolean', 'date', 'dateTime', 'decimal', 'enum', 'float', 
-            'id', 'increments', 'integer', 'json', 'longText', 'string', 'text', 'timestamps', 
-            'unsignedInteger'
-        ];
+        $types = $this->getColumnTypes();
 
         return $this->choice(
             'Choose the column type:',
@@ -156,6 +165,20 @@ private function handleForeignKey($table, $column)
         }
 
         return "'{$value}'";
+    }
+
+    /**
+     * Get the list of available column types.
+     *
+     * @return array
+     */
+    private function getColumnTypes()
+    {
+        return [
+            'bigInteger', 'boolean', 'date', 'dateTime', 'decimal', 'enum', 'float', 
+            'foreignId', 'id', 'increments', 'integer', 'json', 'longText', 'string', 'text', 'timestamps', 
+            'unsignedInteger'
+        ];
     }
 
     /**
