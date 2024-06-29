@@ -69,6 +69,20 @@ php artisan table:add
 
 This will guide you through the process of adding a new column, asking for the table name, column name, type, and other relevant details.
 
+### List Table Structures
+
+If you need to check your current table structure (e.g., before adding a new column to a table), you can easily retrieve it by running: 
+
+```bash
+php artisan table:list
+```
+Or
+
+```bash
+php artisan table:list {table}
+```
+
+
 ## Contributing
 
 Contributions are welcome! Please submit a pull request or create an issue to discuss any changes.
