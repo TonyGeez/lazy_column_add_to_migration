@@ -6,29 +6,13 @@
 
 You can install the package via Composer:
 
-1. Add the package repository to your `composer.json`:
-
-    ```json
-    {
-        "repositories": [
-            {
-                "type": "vcs",
-                "url": "https://github.com/TonyGeez/lazy_column_add_to_migration"
-            }
-        ],
-        "require": {
-            "tonygeez/lazy-column-add-to-migration": "dev-master"
-        }
-    }
-    ```
-
-2. Run the `composer require` command:
+1. Install via Composer:
 
     ```bash
     composer require tonygeez/lazy-column-add-to-migration
     ```
 
-3. If you are using Laravel 5.4 or lower, add the service provider to the `providers` array in `config/app.php`:
+3. If you are using Laravel 5.4 or lower ```(not tested)```, add the service provider to the `providers` array in `config/app.php`:
 
     ```php
     'providers' => [
