@@ -1,7 +1,10 @@
 <?php
+
 namespace TonyGeez\LazyColumnAddToMigration;
 
 use Illuminate\Support\ServiceProvider;
+use TonyGeez\LazyColumnAddToMigration\Console\Commands\AddColumnToTableCommand;
+use TonyGeez\LazyColumnAddToMigration\Console\Commands\ListTableColumnsCommand;
 
 class LazyColumnServiceProvider extends ServiceProvider
 {
@@ -9,9 +12,14 @@ class LazyColumnServiceProvider extends ServiceProvider
     {
         if ($this->app->runningInConsole()) {
             $this->commands([
-                Console\Commands\AddColumnToTableCommand::class,
-                Console\Commands\ListTableColumnsCommand::class
+                AddColumnToTableCommand::class,
+                ListTableColumnsCommand::class,
             ]);
         }
+    }
+
+    public function register()
+    {
+        //
     }
 }
