@@ -10,7 +10,7 @@ class ListTableColumnsCommand extends Command
 {
     protected $signature = 'table:list {table? : The specific table to list columns for}';
 
-    protected $description = 'List all tables and their columns with types';
+    protected $description = 'List all tables and their columns with types and relations';
 
     public function handle()
     {
@@ -31,9 +31,8 @@ class ListTableColumnsCommand extends Command
     {
         $tables = DB::select('SHOW TABLES');
         return array_map(function ($table) {
-            // Assuming your DB default connection settings return an object
-            $table = (array)$table;  // Convert to array
-            return array_values($table)[0];  // Extract table name
+            $table = (array)$table;
+            return array_values($table)[0];
         }, $tables);
     }
 
@@ -46,33 +45,74 @@ class ListTableColumnsCommand extends Command
 
         $this->info("Table: {$table}");
         $this->table(
-            ['Column', 'Type', 'Nullable', 'Default'],
+            ['Column', 'Type', 'Nullable', 'Default', 'Relation'],
             $this->getColumnsForTable($table)
         );
     }
-protected function getColumnsForTable($table)
-{
-    $columns = Schema::getColumnListing($table);
-    $columnData = [];
 
-    foreach ($columns as $column) {
-        $type = Schema::getColumnType($table, $column);
-        // Ensure the query is a string
-        $columnDetails = DB::select("SHOW COLUMNS FROM `{$table}` WHERE Field = ?", [$column]);
+    protected function getColumnsForTable($table)
+    {
+        $columns = Schema::getColumnListing($table);
+        $columnData = [];
 
-        if (!empty($columnDetails)) {
-            $default = $columnDetails[0]->Default ?? 'NULL';
-            $nullable = $columnDetails[0]->Null === 'YES' ? 'Yes' : 'No';
+        foreach ($columns as $column) {
+            $type = Schema::getColumnType($table, $column);
+            $columnDetails = DB::select("SHOW COLUMNS FROM `{$table}` WHERE Field = ?", [$column]);
 
-            $columnData[] = [
-                'Column'   => $column,
-                'Type'     => $type,
-                'Nullable' => $nullable,
-                'Default'  => $default
-            ];
+            if (!empty($columnDetails)) {
+                $default = $columnDetails[0]->Default ?? 'NULL';
+                $nullable = $columnDetails[0]->Null === 'YES' ? 'Yes' : 'No';
+                $relation = $this->getRelation($table, $column);
+                $isUnsigned = strpos($columnDetails[0]->Type, 'unsigned') !== false;
+
+                $columnData[] = [
+                    'Column'   => $column,
+                    'Type'     => $this->mapTypeToLaravelSchema($type, $isUnsigned, $relation),
+                    'Nullable' => $nullable,
+                    'Default'  => $default,
+                    'Relation' => $relation
+                ];
+            }
         }
+
+        return $columnData;
     }
 
-    return $columnData;
-}
+    protected function getRelation($table, $column)
+    {
+        $foreignKeys = DB::select("SELECT * FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE TABLE_NAME = ? AND COLUMN_NAME = ? AND REFERENCED_TABLE_NAME IS NOT NULL", [$table, $column]);
+
+        if (!empty($foreignKeys)) {
+            $fk = $foreignKeys[0];
+            return "{$fk->REFERENCED_TABLE_NAME}({$fk->REFERENCED_COLUMN_NAME})";
+        }
+
+        return '';
+    }
+
+    protected function mapTypeToLaravelSchema($type, $isUnsigned, $relation)
+    {
+        $map = [
+            'int' => $isUnsigned ? 'unsignedInteger' : 'integer',
+            'bigint' => $isUnsigned ? 'unsignedBigInteger' : 'bigInteger',
+            'varchar' => 'string',
+            'text' => 'text',
+            'date' => 'date',
+            'datetime' => 'dateTime',
+            'timestamp' => 'timestamp',
+            'boolean' => 'boolean',
+            'decimal' => 'decimal',
+            'float' => 'float',
+            'double' => 'double',
+            'json' => 'json',
+        ];
+
+        $type = $map[$type] ?? $type;
+
+        if (!empty($relation)) {
+            $type = "foreignId";
+        }
+
+        return '$table->' . $type . '(\'' . $column . '\')';
+    }
 }
