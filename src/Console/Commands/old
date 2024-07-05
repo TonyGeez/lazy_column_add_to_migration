@@ -6,7 +6,7 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
-use TonyGeez\LazyColumnAddToMigration\Console\Commands\Helpers\DatabaseHelper;
+use TonyGeez\LazyColumnAddToMigration\Helpers\DatabaseHelper;
 
 class AddColumnToTableCommand extends Command
 {
