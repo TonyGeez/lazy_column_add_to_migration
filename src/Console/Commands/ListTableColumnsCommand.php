@@ -3,116 +3,158 @@
 namespace TonyGeez\LazyColumnAddToMigration\Console\Commands;
 
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
+use TonyGeez\LazyColumnAddToMigration\Helpers\DatabaseHelper;
 
-class ListTableColumnsCommand extends Command
+class AddColumnToTableCommand extends Command
 {
-    protected $signature = 'table:list {table? : The specific table to list columns for}';
+    protected $signature = 'table:add 
+                    {table? : The name of the table}
+                    {column? : The name of the column to add}
+                    {--type= : The type of the column}
+                    {--nullable : Make the column nullable}
+                    {--after= : Add the column after a specific column}
+                    {--default= : Set a default value for the column}
+                    {--foreign-model= : The model class for foreignIdFor}';
 
-    protected $description = 'List all tables and their columns with types and relations';
+    protected $description = 'Add a new column to an existing table';
 
     public function handle()
     {
-        $specificTable = $this->argument('table');
+        $tables = DatabaseHelper::getAllTables();
 
-        if ($specificTable) {
-            $this->listColumnsForTable($specificTable);
+        if (!$this->argument('table')) {
+            $selectedTable = $this->choice('Select the table to update:', $tables);
+            $this->info("Selected table: {$selectedTable}");
+            $table = $selectedTable;
         } else {
-            $tables = $this->getAllTables();
-            foreach ($tables as $table) {
-                $this->listColumnsForTable($table);
-                $this->line(''); // Add a blank line between tables
-            }
-        }
-    }
-
-    protected function getAllTables()
-    {
-        $tables = DB::select('SHOW TABLES');
-        return array_map(function ($table) {
-            $table = (array)$table;
-            return array_values($table)[0];
-        }, $tables);
-    }
-
-    protected function listColumnsForTable($table)
-    {
-        if (!Schema::hasTable($table)) {
-            $this->error("Table '{$table}' does not exist.");
-            return;
+            $table = $this->argument('table');
         }
 
-        $this->info("Table: {$table}");
-        $this->table(
-            ['Column', 'Type', 'Nullable', 'Default', 'Relation'],
-            $this->getColumnsForTable($table)
+        $column = $this->argument('column') ?? $this->ask('Enter the column name:');
+
+        $type = $this->option('type') ?? $this->choice(
+            'Choose the column type:',
+            $this->getColumnTypes(),
+            'string'
         );
+
+        $isForeignKey = $type === 'foreignId';
+
+        if ($isForeignKey) {
+            $models = $this->getModelClasses();
+            $foreignModel = $this->option('foreign-model') ?? $this->choice('Select the model class for the foreign key:', $models);
+            $columnDefinition = $this->handleForeignKey($table, $column, $foreignModel);
+        } else {
+            $columnDefinition = $this->buildColumnDefinition($type, $column);
+        }
+
+        $nullable = $this->option('nullable') ?? $this->confirm('Should the column be nullable?', false);
+        if ($nullable) {
+            $columnDefinition .= "->nullable()";
+        }
+
+        $default = $this->option('default') ?? $this->ask('Enter a default value (optional):');
+        if (!empty($default)) {
+            $columnDefinition .= "->default(" . $this->formatDefaultValue($type, $default) . ")";
+        }
+
+        $after = $this->option('after') ?? $this->ask('Enter the column to place the new column after (optional):');
+        if ($after) {
+            $columnDefinition .= "->after('{$after}')";
+        }
+
+        $columnDefinition .= ";";
+
+        $this->generateMigrationFile($table, $column, $columnDefinition);
     }
 
-    protected function getColumnsForTable($table)
+    private function getModelClasses()
     {
-        $columns = Schema::getColumnListing($table);
-        $columnData = [];
+        $models = [];
+        $path = app_path('Models');
+        $files = File::files($path);
 
-        foreach ($columns as $column) {
-            $type = Schema::getColumnType($table, $column);
-            $columnDetails = DB::select("SHOW COLUMNS FROM `{$table}` WHERE Field = ?", [$column]);
-
-            if (!empty($columnDetails)) {
-                $default = $columnDetails[0]->Default ?? 'NULL';
-                $nullable = $columnDetails[0]->Null === 'YES' ? 'Yes' : 'No';
-                $relation = $this->getRelation($table, $column);
-                $isUnsigned = strpos($columnDetails[0]->Type, 'unsigned') !== false;
-
-                $columnData[] = [
-                    'Column'   => $column,
-                    'Type'     => $this->mapTypeToLaravelSchema($type, $isUnsigned, $relation, $column),
-                    'Nullable' => $nullable,
-                    'Default'  => $default,
-                    'Relation' => $relation
-                ];
+        foreach ($files as $file) {
+            $className = 'App\\Models\\' . pathinfo($file, PATHINFO_FILENAME);
+            if (class_exists($className)) {
+                $models[] = $className;
             }
         }
 
-        return $columnData;
+        return $models;
     }
 
-    protected function getRelation($table, $column)
+    private function handleForeignKey($table, $column, $foreignModel)
     {
-        $foreignKeys = DB::select("SELECT * FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE TABLE_NAME = ? AND COLUMN_NAME = ? AND REFERENCED_TABLE_NAME IS NOT NULL", [$table, $column]);
+        $relatedTable = Str::plural(Str::snake(class_basename($foreignModel)));
 
-        if (!empty($foreignKeys)) {
-            $fk = $foreignKeys[0];
-            return "{$fk->REFERENCED_TABLE_NAME}({$fk->REFERENCED_COLUMN_NAME})";
+        $columnDefinition = "\$table->foreignIdFor({$foreignModel}::class, '{$column}')";
+        $columnDefinition .= "->constrained('{$relatedTable}')";
+
+        return $columnDefinition;
+    }
+
+    private function buildColumnDefinition($type, $column)
+    {
+        $definition = "\$table->{$type}('{$column}'";
+
+        if ($type === 'enum') {
+            $values = $this->ask('Enter enum values separated by commas:');
+            $values = array_map('trim', explode(',', $values));
+            $valuesString = implode("', '", $values);
+            $definition .= ", ['{$valuesString}']";
+        } elseif (in_array($type, ['decimal', 'float'])) {
+            $total = $this->ask('Enter total digits (including decimals):');
+            $places = $this->ask('Enter decimal places:');
+            $definition .= ", {$total}, {$places}";
         }
 
-        return '';
+        $definition .= ")";
+
+        return $definition;
     }
 
-    protected function mapTypeToLaravelSchema($type, $isUnsigned, $relation, $column)
+    private function formatDefaultValue($type, $value)
     {
-        $map = [
-            'int' => $isUnsigned ? 'unsignedInteger' : 'integer',
-            'bigint' => $isUnsigned ? 'unsignedBigInteger' : 'bigInteger',
-            'varchar' => 'string',
-            'text' => 'text',
-            'date' => 'date',
-            'datetime' => 'dateTime',
-            'timestamp' => 'timestamp',
-            'boolean' => 'boolean',
-            'decimal' => 'decimal',
-            'float' => 'float',
-            'double' => 'double',
-            'json' => 'json',
+        if (in_array($type, ['date', 'dateTime']) && strtoupper($value) === 'CURRENT_TIMESTAMP') {
+            return "DB::raw('CURRENT_TIMESTAMP')";
+        }
+
+        if (in_array($type, ['integer', 'bigInteger', 'unsignedInteger', 'float', 'decimal'])) {
+            return $value;
+        }
+
+        return "'{$value}'";
+    }
+
+    private function getColumnTypes()
+    {
+        return [
+            'bigInteger', 'boolean', 'date', 'dateTime', 'decimal', 'enum', 'float', 
+            'foreignId', 'id', 'increments', 'integer', 'json', 'longText', 'string', 'text', 'timestamps', 
+            'unsignedInteger'
         ];
+    }
 
-        $type = $map[$type] ?? $type;
+    private function generateMigrationFile($table, $column, $columnDefinition)
+    {
+        $migrationName = "add_{$column}_to_{$table}_table";
+        $fileName = date('Y_m_d_His') . "_" . $migrationName . ".php";
+        $path = database_path("migrations/{$fileName}");
 
-        if (!empty($relation)) {
-            $type = "foreignId";
-        }
+        $stub = File::get(__DIR__ . '/stubs/add-column.stub');
 
-        return '$table->' . $type . '(\'' . $column . '\')';
+        $stub = str_replace(
+            ['{{table}}', '{{column}}', '{{columnDefinition}}'],
+            [$table, $column, $columnDefinition],
+            $stub
+        );
+
+        File::put($path, $stub);
+
+        $this->info("Migration created successfully: {$fileName}");
     }
 }
